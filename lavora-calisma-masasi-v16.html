@@ -810,7 +810,9 @@ if(Object.keys(xlsImages).length>0){
     // Görselleri filtrele: Logo/header/küçük görselleri çıkar
     const productImages=allImages.filter(img=>{
       const sizeKB=img.size/1024;
-      return sizeKB>=20&&sizeKB<=3072;
+      // 10KB-3MB arası: Gerçek ürün görselleri
+      // <10KB: Küçük logolar/icon'lar
+      return sizeKB>=10&&sizeKB<=3072;
     });
     
     dbg(`📦 ${allImages.length} görsel bulundu, ${productImages.length} gerçek ürün görseli filtrelendi`);
