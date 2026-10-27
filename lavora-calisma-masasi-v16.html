@@ -773,10 +773,20 @@ if(!p){const sh=fromWb(XLSX.read(buf,{type:'array',cellDates:true}));if(!sh.leng
 const ch=wb?await wovl(wb,p,pk):0;save();p._ch=ch;p._pk=pk;return p}
 function wshow(p){wp=p;wm='proj';wf='all';wq='';led=false;cur=null;close();render();scrollTo(0,0);wh2(p)}
 $('#fu').accept='.xlsx,.xls,.csv,.json';
-$('#fu').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;if(window.__imp){return toast('Dosya zaten açılıyor. Bekle.')}window.__imp=1;toast('Dosya açılıyor…',9e5);
+$('#fu').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;if(window.__imp){return toast('Dosya zaten açılıyor. Bekle.')}window.__imp=1;
+/* YENİ: Format kontrolü - .xls eski format uyarısı */
+const ext=f.name.toLowerCase().split('.').pop();
+if(ext==='xls'&&!await sure({icon:'alert-triangle',title:'Eski Excel Formatı Tespit Edildi',text:'Bu dosya eski .xls formatında.\n\n✓ Veriler okunacak\n⚠️ Görseller otomatik alınamayabilir\n\nEN İYİ DENEYİM:\n1. Excel\'de dosyayı aç\n2. "Farklı Kaydet" → ".xlsx" seç\n3. Yeni dosyayı yükle\n\nYine de devam edilsin mi?',ok:'Devam Et',cancel:'İptal'})){window.__imp=0;return}
+toast('Dosya açılıyor…',9e5);
 try{if(/\.json$/i.test(f.name)){const pk=JSON.parse(await f.text());if(pk.app!='lavora-proje')throw new Error('Bu bir Lavora proje dosyası değil');const p=await wunpack(pk);document.querySelector('.toast')?.remove();wshow(p);return toast('Proje açıldı: '+p.w.items.length+' ürün')}
 const buf=await f.arrayBuffer();let p=null;if(/\.xlsx$/i.test(f.name)){try{p=await wxlimp(buf,f.name)}catch(x){dbg('ExcelJS: '+x.message)}}
-if(p){document.querySelector('.toast')?.remove();const ch=p._ch,pk=p._pk;delete p._ch;delete p._pk;if(pk||p.w.items.length){wshow(p);return toast(pk?`Proje açıldı${ch?`, Excel'deki ${ch} değişiklik işlendi`:''}`:`${p.w.items.length} ürün ve görseller alındı`,4e3)}wm=null;cur=p;si=0;fq='';render();return toast('Dosya açıldı: '+p.s.length+' sayfa')}
+if(p){document.querySelector('.toast')?.remove();const ch=p._ch,pk=p._pk;delete p._ch;delete p._pk;if(pk||p.w.items.length){wshow(p);
+/* YENİ: Görsel kontrolü ve raporu */
+const imgR=()=>{const t=p.w.items.length,w=p.w.items.filter(i=>i.ph?.length).length;return{t,w,m:t-w}};
+const ir=imgR();
+let msg=pk?`Proje açıldı${ch?`, Excel'deki ${ch} değişiklik işlendi`:''}`:` ${p.w.items.length} ürün ve görseller alındı`;
+if(ir.m>0){msg+=` · ⚠️ ${ir.m} ürünün görseli eksik`;setTimeout(()=>{if(ir.m>0&&confirm(`${ir.m} ürünün görseli eksik.\n\nManuel eklemek için Görsel Sihirbazı açılsın mı?`))wImgWiz()},3e3)}else if(ir.w>0)msg+=` · ✅ Tüm görseller tamam (${ir.w})`;
+return toast(msg,6e3)}wm=null;cur=p;si=0;fq='';render();return toast('Dosya açıldı: '+p.s.length+' sayfa')}
 if(/\.xlsx$/i.test(f.name))toast('Excel modülü yüklenemedi; görseller aktarılamadı',5e3);openWb(XLSX.read(buf,{type:'array',cellDates:true}),f.name)}catch(x){err(x.message?x:new Error('Dosya okunamadı. Geçerli bir Excel, CSV veya .json seç.'))}finally{window.__imp=0}};
 /* olaylar */
 document.addEventListener('change',async e=>{const x=e.target;if(x.dataset&&x.dataset.wprice!==undefined&&wi&&wp){if(wsetprice(wp,wi,x.value)){wsync(wp);wtt();try{await winc(wp)}catch(z){}wis();toast(num(x.value)?'Fiyat işlendi, toplam ve gelir güncellendi':'Fiyat silindi')}else toast('Bu ürünün sayfada fiyat sütunu bulunamadı')}});
@@ -818,6 +828,9 @@ case'stg':wi=null;wsg();break;
 case'su':{const S=wp.w.stages,i=+d.i;if(i>0){[S[i-1],S[i]]=[S[i],S[i-1]];wtt();wsg()}break}
 case'sx':if(wp.w.stages.length>1&&await sure({title:'Aşama silinsin mi?',ok:'Sil',danger:1})){wp.w.stages.splice(+d.i,1);wtt();wsg()}break;
 case'sa':wp.w.stages.push({id:wid(),n:'Yeni aşama'});wtt();wsg();break;
+/* YENİ: Görsel Sihirbazı */
+case'imgwiz':wImgWiz();break;
+case'selimg':{const it=wp.w.items.find(i=>i.id==d.id);if(!it)break;const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.multiple=true;inp.onchange=async e=>{const fs=[...e.target.files];if(!fs.length)return;toast(`${fs.length} fotoğraf yükleniyor...`,9e5);for(const f of fs){const id=await wadd(f);if(!it.ph)it.ph=[];it.ph.push(id)}wtt();document.querySelector('.toast')?.remove();wImgWiz();toast(`✓ ${fs.length} fotoğraf eklendi`)};inp.click();break}
 case's0':if(await sure({title:'Aşamalar sıfırlansın mı?',text:'Varsayılan aşamalara dönülür, ürünlerdeki durumlar sıfırlanır.',ok:'Sıfırla',danger:1})){wp.w.stages=DST.map(n=>({id:wid(),n}));wp.w.items.forEach(i=>i.st={});wtt();wsg()}break;
 case'exp':wexp();break;
 case'xl':case'xls':close();await wxl(pcur(),a=='w:xls');break;
@@ -871,5 +884,8 @@ navigator.vibrate?.(200);
 });
 
 })();
+
+/* ===== GÖRSEL SİHİRBAZI: Manuel görsel ekleme sistemi ===== */
+function wImgWiz(){if(!wp||!wp.w)return;const its=wp.w.items.filter(i=>!i.ph||!i.ph.length);if(!its.length){toast('✅ Tüm ürünlerin görseli var!');return}wpn(`<h3>📸 Görsel Ekleme Sihirbazı</h3><p style="color:var(--mu);margin-bottom:16px">${its.length} ürüne görsel ekle. Her ürün için fotoğraf seç.</p><div style="max-height:60vh;overflow-y:auto">${its.map(i=>`<div style="background:var(--s2);padding:12px;border-radius:12px;margin-bottom:8px"><div style="font-weight:700;margin-bottom:4px">${esc(i.n)}</div><div style="font-size:13px;color:var(--mu);margin-bottom:8px">${i.q?`Adet: ${i.q}`:''}${i.dim?' • '+i.dim:''}</div><button class="opt" data-a="w:selimg" data-id="${i.id}"><b>📁 Görsel Seç</b></button><div id="wiz-${i.id}" style="margin-top:8px"></div></div>`).join('')}</div><button class="gold" style="margin-top:16px" data-a="w:done">✓ Tamamla</button>`);wph()}
 
 </script></body></html>
