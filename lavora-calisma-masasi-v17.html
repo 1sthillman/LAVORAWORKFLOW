@@ -791,13 +791,30 @@ document.addEventListener('keydown',e=>{if((e.key=='Enter'||e.key==' ')&&e.targe
 function cfbStream(buf,names){const u=new Uint8Array(buf),v=new DataView(buf instanceof ArrayBuffer?buf:u.buffer,u.byteOffset,u.length);
 if(v.getUint32(0,true)!=0xE011CFD0)throw Error('OLE dosyası değil');
 const ss=1<<v.getUint16(30,true),ms=1<<v.getUint16(32,true),cut=v.getUint32(56,true),sec=n=>(n+1)*ss;
-const fat=[];const rdI=(s,f)=>{const o=sec(s);for(let i=0;i<ss/4;i++)f(v.getUint32(o+i*4,true))};
+const fat=[];const rdI=(s,f)=>{const o=sec(s);for(let i=0;i<(ss/4);i++)f(v.getUint32(o+i*4,true))};
 const dif=[];for(let i=0;i<109;i++){const x=v.getUint32(76+i*4,true);if(x<0xFFFFFFFA)dif.push(x)}
-let d=v.getUint32(68,true),nd=v.getUint32(72,true);while(nd-->0&&d<0xFFFFFFFA){const o=sec(d);for(let i=0;i<ss/4-1;i++){const x=v.getUint32(o+i*4,true);if(x<0xFFFFFFFA)dif.push(x)}d=v.getUint32(o+ss-4,true)}
+let d=v.getUint32(68,true),nd=v.getUint32(72,true);
+while(nd-->0&&d<0xFFFFFFFA){
+  const o=sec(d);
+  for(let i=0;i<(ss/4)-1;i++){
+    const x=v.getUint32(o+i*4,true);
+    if(x<0xFFFFFFFA)dif.push(x)
+  }
+  d=v.getUint32(o+ss-4,true)
+}
 for(const s of dif)rdI(s,x=>fat.push(x));
 const chain=(s,tab)=>{const a=[];let g=0;while(s<0xFFFFFFFA&&g++<5e6){a.push(s);s=tab[s]}return a};
 const rd=(s,size)=>{const c=chain(s,fat),o=new Uint8Array(c.length*ss);c.forEach((x,i)=>o.set(u.subarray(sec(x),sec(x)+ss),i*ss));return size==null?o:o.subarray(0,size)};
-const dirb=rd(v.getUint32(48,true)),D=[];for(let i=0;i+128<=dirb.length;i+=128){const dv=new DataView(dirb.buffer,dirb.byteOffset+i,128),l=dv.getUint16(64,true);D.push({n:new TextDecoder('utf-16le').decode(dirb.subarray(i,i+Math.max(0,l-2))),t:dirb[i+66],s:dv.getUint32(116,true),z:dv.getUint32(120,true)})}
+const dirb=rd(v.getUint32(48,true)),D=[];
+for(let i=0;i+128<=dirb.length;i+=128){
+  const dv=new DataView(dirb.buffer,dirb.byteOffset+i,128),l=dv.getUint16(64,true);
+  D.push({
+    n:new TextDecoder('utf-16le').decode(dirb.subarray(i,i+Math.max(0,l-2))),
+    t:dirb[i+66],
+    s:dv.getUint32(116,true),
+    z:dv.getUint32(120,true)
+  })
+}
 const e=names.map(n=>D.find(x=>x.t==2&&x.n==n)).find(Boolean);if(!e)throw Error('Workbook akışı yok');
 if(e.z>=cut)return rd(e.s,e.z);
 const root=D[0],mini=rd(root.s,root.z),mf=[];const mfb=rd(v.getUint32(60,true));const mv=new DataView(mfb.buffer,mfb.byteOffset,mfb.length);for(let i=0;i<mfb.length/4;i++)mf.push(mv.getUint32(i*4,true));
