@@ -794,7 +794,7 @@ const ss=1<<v.getUint16(30,true),ms=1<<v.getUint16(32,true),cut=v.getUint32(56,t
 const fat=[];const rdI=(s,f)=>{const o=sec(s);for(let i=0;i<(ss/4);i++)f(v.getUint32(o+i*4,true))};
 const dif=[];for(let i=0;i<109;i++){const x=v.getUint32(76+i*4,true);if(x<0xFFFFFFFA)dif.push(x)}
 let d=v.getUint32(68,true),nd=v.getUint32(72,true);
-while(nd-->0&&d<0xFFFFFFFA){
+while(nd-- >0&&d<0xFFFFFFFA){
   const o=sec(d);
   for(let i=0;i<(ss/4)-1;i++){
     const x=v.getUint32(o+i*4,true);
