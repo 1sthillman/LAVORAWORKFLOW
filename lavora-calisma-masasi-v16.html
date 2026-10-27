@@ -808,57 +808,70 @@ if(Object.keys(xlsImages).length>0){
     }
     
     // Görselleri filtrele: Logo/header/küçük görselleri çıkar
-    // Gerçek ürün görselleri genelde 50KB+ boyutunda
     const productImages=allImages.filter(img=>{
       const sizeKB=img.size/1024;
-      // 20KB'den küçük görseller genelde logo/icon
-      // 3MB'den büyük görseller de sorun olabilir (ama kabul edelim)
       return sizeKB>=20&&sizeKB<=3072;
     });
     
     dbg(`📦 ${allImages.length} görsel bulundu, ${productImages.length} gerçek ürün görseli filtrelendi`);
-    dbg(`🗑️ ${allImages.length-productImages.length} küçük görsel (logo/icon) atlandı`);
+    if(allImages.length>productImages.length){
+      dbg(`🗑️ ${allImages.length-productImages.length} küçük görsel (logo/icon) atlandı`);
+    }
     
     if(productImages.length===0){
       dbg('⚠️ Hiç ürün görseli bulunamadı (tümü logo/icon boyutunda)');
-      return;
-    }
-    
-    // Her görseli sırayla ürünlere ekle
-    for(let i=0;i<productImages.length;i++){
-      const img=productImages[i];
-      const item=p.w.items[Math.min(i,p.w.items.length-1)];
+    }else{
+      // HIZLI YOL: wadd() bypass, doğrudan data URL kullan
+      dbg(`🚀 Hızlı mod: Görseller doğrudan data URL ile ekleniyor (compress yok)`);
       
-      try{
-        // Blob oluştur
-        const blob=new Blob([img.buffer],{type:'image/'+img.ext});
+      for(let i=0;i<productImages.length;i++){
+        const img=productImages[i];
+        const item=p.w.items[Math.min(i,p.w.items.length-1)];
         
-        // IndexedDB'ye kaydet
-        const imgId=await wadd(blob);
-        
-        if(imgId){
+        try{
+          // Blob URL yerine direkt img.data kullan (zaten var)
+          const imgId=wid(); // Yeni ID oluştur
+          
           if(!item.ph)item.ph=[];
           item.ph.push(imgId);
-          addedCount++;
-          const sizeKB=(img.size/1024).toFixed(1);
-          dbg(`✓ Görsel #${i+1} (${sizeKB}KB ${img.ext.toUpperCase()}) → "${item.n}"`);
-        }else{
-          dbg(`✗ Görsel #${i+1} kaydedilemedi (wadd null döndü)`);
+          
+          // IndexedDB'ye direkt kaydet (compress olmadan)
+          const blob=new Blob([img.buffer],{type:'image/'+img.ext});
+          const reader=new FileReader();
+          
+          await new Promise((resolve,reject)=>{
+            reader.onload=async()=>{
+              try{
+                const dataUrl=reader.result;
+                await tx('readwrite',s=>s.put({id:imgId,t:Date.now(),img:dataUrl,th:dataUrl}),'wph');
+                WC[imgId]=dataUrl;
+                addedCount++;
+                const sizeKB=(img.size/1024).toFixed(1);
+                dbg(`✓ #${i+1} (${sizeKB}KB ${img.ext.toUpperCase()}) → "${item.n}"`);
+                resolve();
+              }catch(e){
+                reject(e);
+              }
+            };
+            reader.onerror=reject;
+            reader.readAsDataURL(blob);
+          });
+          
+        }catch(err){
+          dbg(`✗ Görsel #${i+1} hatası: ${err.message}`);
         }
-      }catch(err){
-        dbg(`✗ Görsel #${i+1} hatası: ${err.message}`);
+      }
+      
+      if(addedCount>0){
+        p.u=Date.now();
+        await winc(p);
+        dbg(`✅ ${addedCount}/${productImages.length} görsel eklendi ve kaydedildi`);
+      }else{
+        dbg('❌ Hiçbir görsel eklenemedi!');
       }
     }
-    
-    if(addedCount>0){
-      p.u=Date.now();
-      await winc(p);
-      dbg(`✅ ${addedCount}/${productImages.length} görsel başarıyla eklendi ve kaydedildi`);
-    }else{
-      dbg('❌ Hiçbir görsel eklenemedi! wadd() fonksiyonu başarısız olabilir.');
-    }
   }catch(e){
-    dbg('❌ Görsel eşleştirme hatası: '+e.message);
+    dbg('❌ Görsel işleme hatası: '+e.message);
     console.error(e);
   }
 }
