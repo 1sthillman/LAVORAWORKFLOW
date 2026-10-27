@@ -1016,6 +1016,7 @@ async function xlsExtractImages(buf){
           images['default'].push({
             r1:0,r2:0,c1:0,c2:0,
             ext:'jpeg',
+            size:imgData.length,  // ← SIZE EKLENDI
             buffer:imgData.buffer.slice(imgData.byteOffset,imgData.byteOffset+imgData.byteLength),
             name:`image_${++foundCount}.jpg`,
             data:URL.createObjectURL(new Blob([imgData],{type:'image/jpeg'}))
@@ -1051,6 +1052,7 @@ async function xlsExtractImages(buf){
           images['default'].push({
             r1:0,r2:0,c1:0,c2:0,
             ext:'png',
+            size:imgData.length,  // ← SIZE EKLENDI
             buffer:imgData.buffer.slice(imgData.byteOffset,imgData.byteOffset+imgData.byteLength),
             name:`image_${++foundCount}.png`,
             data:URL.createObjectURL(new Blob([imgData],{type:'image/png'}))
