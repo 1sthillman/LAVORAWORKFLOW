@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Excel Analiz - Lavora Test</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+.sheet { margin: 20px 0; padding: 10px; background: #000; border: 1px solid #0f0; }
+.title { color: #0ff; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+table { border-collapse: collapse; margin: 10px 0; }
+th, td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
+th { background: #2a2a2a; color: #ff0; }
+.row-num { color: #666; }
+.header { background: #1a3a1a !important; color: #0f0 !important; }
+.summary { color: #f0f; }
+.detail { color: #0ff; }
+.warning { color: #f00; font-weight: bold; }
+.success { color: #0f0; font-weight: bold; }
+.info { color: #ff0; }
+pre { background: #0a0a0a; padding: 10px; border-left: 3px solid #0f0; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>🔬 LAVORA EXCEL ANALİZ SİSTEMİ</h1>
+<div id="output"></div>
+
+<script>
+const output = document.getElementById('output');
+const log = (msg, cls = '') => {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = msg;
+  output.appendChild(div);
+};
+
+const table = (title, data) => {
+  const div = document.createElement('div');
+  div.className = 'sheet';
+  div.innerHTML = `<div class="title">${title}</div>`;
+  
+  if (data.length === 0) {
+    div.innerHTML += '<p>Veri yok</p>';
+  } else {
+    const tbl = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    
+    // Header
+    const hrow = document.createElement('tr');
+    hrow.innerHTML = '<th>#</th>';
+    data[0].forEach((_, i) => {
+      const th = document.createElement('th');
+      th.textContent = `Col ${i}`;
+      hrow.appendChild(th);
+    });
+    thead.appendChild(hrow);
+    
+    // Rows
+    data.forEach((row, ri) => {
+      const tr = document.createElement('tr');
+      const td0 = document.createElement('td');
+      td0.className = 'row-num';
+      td0.textContent = ri;
+      tr.appendChild(td0);
+      
+      row.forEach(cell => {
+        const td = document.createElement('td');
+        td.textContent = cell ?? '';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    
+    tbl.appendChild(thead);
+    tbl.appendChild(tbody);
+    div.appendChild(tbl);
+  }
+  output.appendChild(div);
+};
+
+// Sayı parse
+const num = v => {
+  if (typeof v === 'number') return v;
+  v = String(v).trim();
+  if (!v) return 0;
+  if (v.includes(',') && v.includes('.')) {
+    const lc = v.lastIndexOf(','), ld = v.lastIndexOf('.');
+    v = lc > ld ? v.replace(/\./g, '').replace(',', '.') : v.replace(/,/g, '');
+  } else if (/^[\d\s]{1,3}(,\d{3})+\D*$/.test(v)) {
+    v = v.replace(/,/g, '');
+  } else if (v.includes(',')) {
+    v = v.replace(/\./g, '').replace(',', '.');
+  } else if (/^[-+]?\d{1,3}\.\d{3}(?!\d)\D*$/.test(v)) {
+    v = v.replace(/\./g, '');
+  } else if ((v.match(/\./g) || []).length > 1) {
+    v = v.replace(/\./g, '');
+  }
+  return parseFloat(v.replace(/[^\d.\-]/g, '')) || 0;
+};
+
+// Sütun analizi
+const analyzeCols = (h, rows) => {
+  const tn = x => String(x).replace(/İ/g, 'I');
+  const wk = x => tn(x).toLowerCase().replace(/ı/g, 'i').replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  const find = r => h.findIndex(x => r.test(tn(x)));
+  const qyIdx = find(/adet|miktar|qty/i);
+  const prIdx = find(/birim\s*fiyat|fiyat|price|ucret/i);
+  const totIdx = find(/toplam|tutar|total/i);
+  
+  log(`📊 Sütun Analizi:`, 'info');
+  log(`  - Adet sütunu: ${qyIdx >= 0 ? `Col ${qyIdx} (${h[qyIdx]})` : 'BULUNAMADI'}`, qyIdx >= 0 ? 'success' : 'warning');
+  log(`  - Fiyat sütunu: ${prIdx >= 0 ? `Col ${prIdx} (${h[prIdx]})` : 'BULUNAMADI'}`, prIdx >= 0 ? 'success' : 'warning');
+  log(`  - Toplam sütunu: ${totIdx >= 0 ? `Col ${totIdx} (${h[totIdx]})` : 'BULUNAMADI'}`, totIdx >= 0 ? 'success' : 'warning');
+  
+  return { qyIdx, prIdx, totIdx };
+};
+
+// Sayfa analizi
+const analyzeSheet = (name, h, rows) => {
+  log(`\n${'='.repeat(80)}`, 'info');
+  log(`📄 SAYFA: ${name}`, 'detail');
+  log(`${'='.repeat(80)}`, 'info');
+  
+  const isSummary = /icmal|ozet|özet|summary/i.test(name);
+  log(`Tip: ${isSummary ? 'ÖZET SAYFASI' : 'DETAY SAYFASI'}`, isSummary ? 'summary' : 'detail');
+  log(`Başlık satırı: ${JSON.stringify(h)}`);
+  log(`Toplam satır sayısı: ${rows.length}`);
+  
+  const cols = analyzeCols(h, rows);
+  
+  // Satır analizi
+  log(`\n🔍 Satır Detayları:`, 'info');
+  rows.forEach((row, ri) => {
+    const hasData = row.some(c => String(c || '').trim());
+    if (!hasData) return;
+    
+    const name = String(row[0] || '').trim();
+    const qty = cols.qyIdx >= 0 ? row[cols.qyIdx] : '';
+    const pr = cols.prIdx >= 0 ? row[cols.prIdx] : '';
+    const tot = cols.totIdx >= 0 ? row[cols.totIdx] : '';
+    
+    log(`  [${ri}] ${name}`);
+    if (cols.qyIdx >= 0) log(`      Adet: ${qty} (num: ${num(qty)})`);
+    if (cols.prIdx >= 0) log(`      Fiyat: ${pr} (num: ${num(pr)})`);
+    if (cols.totIdx >= 0) log(`      Toplam: ${tot} (num: ${num(tot)})`);
+    
+    // Çarpım kontrolü
+    if (cols.qyIdx >= 0 && cols.prIdx >= 0 && cols.totIdx >= 0) {
+      const q = num(qty);
+      const p = num(pr);
+      const t = num(tot);
+      const expected = q * p;
+      const diff = Math.abs(expected - t);
+      
+      if (q > 0 && p > 0 && t > 0) {
+        if (diff > 1) {
+          log(`      ⚠️ UYARI: ${q} × ${p} = ${expected} ama dosyada ${t} yazıyor (fark: ${diff.toFixed(2)})`, 'warning');
+        } else {
+          log(`      ✓ Doğru: ${q} × ${p} = ${t}`, 'success');
+        }
+      }
+    }
+  });
+  
+  // Toplam hesapla
+  if (cols.totIdx >= 0) {
+    const total = rows.reduce((sum, row) => sum + num(row[cols.totIdx]), 0);
+    log(`\n💰 SAYFA TOPLAMI: ${total.toFixed(2)} TL`, 'success');
+  }
+};
+
+// Ana analiz
+async function analyzeExcel() {
+  try {
+    log('🚀 Excel dosyası okunuyor...', 'info');
+    
+    const response = await fetch('01-CUBE-BK VOGER 13+3 ODA.xls');
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    
+    log(`✓ Dosya başarıyla okundu`, 'success');
+    log(`📑 Toplam sayfa sayısı: ${workbook.SheetNames.length}`, 'info');
+    log(`📑 Sayfa isimleri: ${workbook.SheetNames.join(', ')}`, 'info');
+    
+    // Her sayfayı analiz et
+    workbook.SheetNames.forEach(sheetName => {
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      
+      if (data.length === 0) {
+        log(`\n⚠️ ${sheetName}: BOŞ SAYFA`, 'warning');
+        return;
+      }
+      
+      // İlk satırı başlık olarak al
+      const header = data[0];
+      const rows = data.slice(1);
+      
+      analyzeSheet(sheetName, header, rows);
+      
+      // Tablo göster (ilk 10 satır)
+      table(`${sheetName} - İlk 10 Satır`, data.slice(0, 11));
+    });
+    
+    log('\n' + '='.repeat(80), 'success');
+    log('✅ ANALİZ TAMAMLANDI', 'success');
+    log('='.repeat(80), 'success');
+    
+  } catch (error) {
+    log(`❌ HATA: ${error.message}`, 'warning');
+    console.error(error);
+  }
+}
+
+// Sayfa yüklenince başlat
+analyzeExcel();
+</script>
+</body>
+</html>

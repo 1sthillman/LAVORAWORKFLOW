@@ -37,5 +37,5 @@ Uygulama tamamen tarayıcıda çalışır, kurulum gerektirmez:
 © 2024 Lavora Design
 
 ## 🤝 Katkıda Bulunma
-ST HİLLMAN
+ST HİLLMAN @st.hillman
 Bu proje Lavora Design için geliştirilmiştir.
