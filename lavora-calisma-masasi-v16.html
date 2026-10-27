@@ -807,33 +807,59 @@ if(Object.keys(xlsImages).length>0){
       allImages.push(...xlsImages[sheetName]);
     }
     
-    dbg(`📦 ${allImages.length} görsel, ${p.w.items.length} ürüne eşleştirilecek`);
+    // Görselleri filtrele: Logo/header/küçük görselleri çıkar
+    // Gerçek ürün görselleri genelde 50KB+ boyutunda
+    const productImages=allImages.filter(img=>{
+      const sizeKB=img.size/1024;
+      // 20KB'den küçük görseller genelde logo/icon
+      // 3MB'den büyük görseller de sorun olabilir (ama kabul edelim)
+      return sizeKB>=20&&sizeKB<=3072;
+    });
     
-    // Her görseli sırayla ilk boş ürüne ekle
-    for(let i=0;i<allImages.length;i++){
-      const img=allImages[i];
-      const item=p.w.items[Math.min(i,p.w.items.length-1)]; // Sırayla git, sonra son ürüne ekle
+    dbg(`📦 ${allImages.length} görsel bulundu, ${productImages.length} gerçek ürün görseli filtrelendi`);
+    dbg(`🗑️ ${allImages.length-productImages.length} küçük görsel (logo/icon) atlandı`);
+    
+    if(productImages.length===0){
+      dbg('⚠️ Hiç ürün görseli bulunamadı (tümü logo/icon boyutunda)');
+      return;
+    }
+    
+    // Her görseli sırayla ürünlere ekle
+    for(let i=0;i<productImages.length;i++){
+      const img=productImages[i];
+      const item=p.w.items[Math.min(i,p.w.items.length-1)];
       
       try{
-        // img.buffer = ArrayBuffer, img.ext = format (jpeg/png)
+        // Blob oluştur
         const blob=new Blob([img.buffer],{type:'image/'+img.ext});
+        
+        // IndexedDB'ye kaydet
         const imgId=await wadd(blob);
-        if(!item.ph)item.ph=[];
-        item.ph.push(imgId);
-        addedCount++;
-        dbg(`✓ Görsel #${i+1} "${item.n}" ürününe eklendi`);
+        
+        if(imgId){
+          if(!item.ph)item.ph=[];
+          item.ph.push(imgId);
+          addedCount++;
+          const sizeKB=(img.size/1024).toFixed(1);
+          dbg(`✓ Görsel #${i+1} (${sizeKB}KB ${img.ext.toUpperCase()}) → "${item.n}"`);
+        }else{
+          dbg(`✗ Görsel #${i+1} kaydedilemedi (wadd null döndü)`);
+        }
       }catch(err){
-        dbg(`✗ Görsel #${i+1} eklenemedi: ${err.message}`);
+        dbg(`✗ Görsel #${i+1} hatası: ${err.message}`);
       }
     }
     
     if(addedCount>0){
       p.u=Date.now();
-      await winc(p); // IndexedDB'ye kaydet
-      dbg(`✅ .xls'den ${addedCount} görsel ürünlere eklendi ve kaydedildi`);
+      await winc(p);
+      dbg(`✅ ${addedCount}/${productImages.length} görsel başarıyla eklendi ve kaydedildi`);
+    }else{
+      dbg('❌ Hiçbir görsel eklenemedi! wadd() fonksiyonu başarısız olabilir.');
     }
   }catch(e){
     dbg('❌ Görsel eşleştirme hatası: '+e.message);
+    console.error(e);
   }
 }
 wshow(p);
