@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0; url=lavora-calisma-masasi-v16.html">
+    <title>Lavora Çalışma Masası - Yönlendiriliyor...</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #0F766E, #0B3F44);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+        .container {
+            padding: 2rem;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            animation: fadeIn 0.5s;
+        }
+        p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            animation: fadeIn 0.7s;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        a {
+            color: white;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Lavora Çalışma Masası</h1>
+        <p>Yönlendiriliyorsunuz...</p>
+        <div class="spinner"></div>
+        <p style="font-size: 0.9rem; opacity: 0.7;">
+            Otomatik yönlendirme çalışmazsa 
+            <a href="lavora-calisma-masasi-v16.html">buraya tıklayın</a>
+        </p>
+    </div>
+</body>
+</html>
