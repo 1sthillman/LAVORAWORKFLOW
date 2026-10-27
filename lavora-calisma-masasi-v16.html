@@ -776,11 +776,56 @@ $('#fu').accept='.xlsx,.xls,.csv,.json';
 $('#fu').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;if(window.__imp){return toast('Dosya zaten açılıyor. Bekle.')}window.__imp=1;toast('Dosya açılıyor…',9e5);
 try{if(/\.json$/i.test(f.name)){const pk=JSON.parse(await f.text());if(pk.app!='lavora-proje')throw new Error('Bu bir Lavora proje dosyası değil');const p=await wunpack(pk);document.querySelector('.toast')?.remove();wshow(p);return toast('Proje açıldı: '+p.w.items.length+' ürün')}
 const buf=await f.arrayBuffer();let p=null;
-/* AKILLI FORMAT DÖNÜŞTÜRME: .xls → .xlsx otomatik */
+/* AKILLI FORMAT DÖNÜŞTÜRME: .xls → görselleri çıkar + .xlsx dönüştür */
 const isOldXls=/\.xls$/i.test(f.name)&&!(/\.xlsx$/i.test(f.name));
-if(isOldXls){try{const wb=XLSX.read(buf,{type:'array',cellDates:true});const newBuf=XLSX.write(wb,{type:'array',bookType:'xlsx'});toast('Excel formatı güncelleniyor...',2e3);await new Promise(r=>setTimeout(r,100));const p2=await wxlimp(newBuf,f.name.replace(/\.xls$/i,'.xlsx'));if(p2){p=p2;dbg('Eski .xls otomatik .xlsx\'e dönüştürüldü')}}catch(x){dbg('.xls dönüştürme hatası: '+x.message)}}
+let xlsImages={};
+if(isOldXls){
+dbg('⚠️ Eski .xls format - görseller özel yöntemle çıkarılıyor...');
+try{
+  // 1. Önce görselleri çıkar (binary parse)
+  xlsImages=await xlsExtractImages(buf);
+  const imgCount=Object.values(xlsImages).reduce((a,b)=>a+b.length,0);
+  if(imgCount>0)dbg(`✓ .xls'den ${imgCount} görsel çıkarıldı`);
+  
+  // 2. Sonra Excel verilerini oku
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const newBuf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+  toast('Excel işleniyor...',2e3);
+  await new Promise(r=>setTimeout(r,100));
+  const p2=await wxlimp(newBuf,f.name.replace(/\.xls$/i,'.xlsx'));
+  if(p2){p=p2;dbg('✓ .xls veriler okundu')}
+}catch(x){dbg('.xls işleme hatası: '+x.message)}}
 if(!p&&/\.xlsx$/i.test(f.name)){try{p=await wxlimp(buf,f.name)}catch(x){dbg('ExcelJS: '+x.message)}}
-if(p){document.querySelector('.toast')?.remove();const ch=p._ch,pk=p._pk;delete p._ch;delete p._ch;delete p._pk;if(pk||p.w.items.length){wshow(p);
+if(p){document.querySelector('.toast')?.remove();const ch=p._ch,pk=p._pk;delete p._ch;delete p._ch;delete p._pk;if(pk||p.w.items.length){
+/* .xls görsellerini ürünlere eşleştir */
+if(Object.keys(xlsImages).length>0){
+  let addedCount=0;
+  try{
+    for(const sheetName in xlsImages){
+      const imgs=xlsImages[sheetName];
+      for(const img of imgs){
+        // Her ürüne sırayla ekle (basit strateji)
+        const items=p.w.items.filter(i=>!i.ph||i.ph.length===0);
+        if(items.length>0){
+          const item=items[Math.min(addedCount,items.length-1)];
+          const blob=new Blob([img.bytes],{type:'image/'+img.ext});
+          const imgId=await wadd(blob);
+          if(!item.ph)item.ph=[];
+          item.ph.push(imgId);
+          addedCount++;
+          dbg(`✓ Görsel "${item.n}" ürününe eklendi`);
+        }
+      }
+    }
+    if(addedCount>0){
+      p.u=Date.now();
+      dbg(`✓ .xls'den ${addedCount} görsel ürünlere eklendi`);
+    }
+  }catch(e){
+    dbg('Görsel eşleştirme hatası: '+e.message);
+  }
+}
+wshow(p);
 /* Görsel raporu - sadece bilgilendirme */
 const imgR=()=>{const t=p.w.items.length,w=p.w.items.filter(i=>i.ph?.length).length;return{t,w,m:t-w}};
 const ir=imgR();
@@ -886,7 +931,99 @@ navigator.vibrate?.(200);
 
 })();
 
-/* ===== GÖRSEL SİHİRBAZI: Manuel görsel ekleme sistemi ===== */
+/* ===== .XLS (ESKİ EXCEL) GÖRSEL ÇIKARMA SİSTEMİ ===== */
+async function xlsExtractImages(buf){
+  const images={};
+  try{
+    /* .xls = BIFF (Binary Interchange File Format)
+       Görseller IMDATA (ImageData) recordlarında saklanır
+       Record yapısı: [type:2byte][size:2byte][data:size]
+    */
+    const view=new DataView(buf);
+    let pos=0;
+    const records=[];
+    
+    // BIFF recordlarını parse et
+    while(pos<buf.byteLength-4){
+      try{
+        const type=view.getUint16(pos,true);
+        const size=view.getUint16(pos+2,true);
+        
+        if(size>0&&size<1e7&&pos+4+size<=buf.byteLength){
+          records.push({type,size,pos:pos+4,data:new Uint8Array(buf,pos+4,size)});
+          pos+=4+size;
+        }else{
+          pos++;
+        }
+      }catch(e){
+        pos++;
+      }
+    }
+    
+    dbg(`✓ .xls parse: ${records.length} record bulundu`);
+    
+    // IMDATA (0x7F), IMGDATA (0xE0), veya diğer görsel recordları ara
+    const imageRecords=records.filter(r=>[0x7F,0xE0,0xE9,0xEB].includes(r.type));
+    
+    if(imageRecords.length){
+      dbg(`✓ ${imageRecords.length} potansiyel görsel record bulundu`);
+      
+      for(const rec of imageRecords){
+        // Görsel formatını tespit et (JPEG, PNG, BMP, GIF)
+        const data=rec.data;
+        let format='',offset=0;
+        
+        // JPEG: FF D8 FF
+        if(data[0]===0xFF&&data[1]===0xD8&&data[2]===0xFF){
+          format='jpeg';
+        }
+        // PNG: 89 50 4E 47
+        else if(data[0]===0x89&&data[1]===0x50&&data[2]===0x4E&&data[3]===0x47){
+          format='png';
+        }
+        // GIF: 47 49 46
+        else if(data[0]===0x47&&data[1]===0x49&&data[2]===0x46){
+          format='gif';
+        }
+        // BMP: 42 4D
+        else if(data[0]===0x42&&data[1]===0x4D){
+          format='bmp';
+        }
+        // Bazı .xls'lerde görseller biraz offset'li olabilir
+        else{
+          // İlk 100 byte'da imza ara
+          for(let i=0;i<Math.min(100,data.length-4);i++){
+            if(data[i]===0xFF&&data[i+1]===0xD8&&data[i+2]===0xFF){
+              format='jpeg';offset=i;break;
+            }else if(data[i]===0x89&&data[i+1]===0x50&&data[i+2]===0x4E&&data[i+3]===0x47){
+              format='png';offset=i;break;
+            }
+          }
+        }
+        
+        if(format){
+          const imgData=offset>0?data.slice(offset):data;
+          // İlk sayfaya ekle (sayfa eşleştirmesi için daha fazla analiz gerekir)
+          if(!images['default'])images['default']=[];
+          images['default'].push({
+            r1:0,r2:0,c1:0,c2:0,
+            ext:format==='jpeg'?'jpeg':format,
+            bytes:imgData
+          });
+          dbg(`  ✓ ${format.toUpperCase()} görsel bulundu (${imgData.length} bytes)`);
+        }
+      }
+    }else{
+      dbg('⚠️ .xls içinde görsel record bulunamadı');
+    }
+    
+  }catch(e){
+    dbg('⚠️ .xls görsel çıkarma hatası: '+e.message);
+  }
+  
+  return images;
+}
+
 function wImgWiz(){if(!wp||!wp.w)return;const its=wp.w.items.filter(i=>!i.ph||!i.ph.length);if(!its.length){toast('✅ Tüm ürünlerin görseli var!');return}wpn(`<h3>📸 Görsel Ekleme Sihirbazı</h3><p style="color:var(--mu);margin-bottom:16px">${its.length} ürüne görsel ekle. Her ürün için fotoğraf seç.</p><div style="max-height:60vh;overflow-y:auto">${its.map(i=>`<div style="background:var(--s2);padding:12px;border-radius:12px;margin-bottom:8px"><div style="font-weight:700;margin-bottom:4px">${esc(i.n)}</div><div style="font-size:13px;color:var(--mu);margin-bottom:8px">${i.q?`Adet: ${i.q}`:''}${i.dim?' • '+i.dim:''}</div><button class="opt" data-a="w:selimg" data-id="${i.id}"><b>📁 Görsel Seç</b></button><div id="wiz-${i.id}" style="margin-top:8px"></div></div>`).join('')}</div><button class="gold" style="margin-top:16px" data-a="w:done">✓ Tamamla</button>`);wph()}
 
 </script></body></html>
