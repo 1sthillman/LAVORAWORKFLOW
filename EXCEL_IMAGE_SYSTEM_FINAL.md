@@ -1,4 +1,4 @@
-# 🎯 EXCEL GÖRSEL SİSTEMİ - KAPSAMLI ÇÖZÜM
+![alt text](image.png)# 🎯 EXCEL GÖRSEL SİSTEMİ - KAPSAMLI ÇÖZÜM
 
 ## 🔍 SORUN TESPİTİ
 

@@ -801,28 +801,39 @@ if(p){document.querySelector('.toast')?.remove();const ch=p._ch,pk=p._pk;delete 
 if(Object.keys(xlsImages).length>0){
   let addedCount=0;
   try{
+    // Tüm görselleri tek bir array'e topla
+    const allImages=[];
     for(const sheetName in xlsImages){
-      const imgs=xlsImages[sheetName];
-      for(const img of imgs){
-        // Her ürüne sırayla ekle (basit strateji)
-        const items=p.w.items.filter(i=>!i.ph||i.ph.length===0);
-        if(items.length>0){
-          const item=items[Math.min(addedCount,items.length-1)];
-          const blob=new Blob([img.bytes],{type:'image/'+img.ext});
-          const imgId=await wadd(blob);
-          if(!item.ph)item.ph=[];
-          item.ph.push(imgId);
-          addedCount++;
-          dbg(`✓ Görsel "${item.n}" ürününe eklendi`);
-        }
+      allImages.push(...xlsImages[sheetName]);
+    }
+    
+    dbg(`📦 ${allImages.length} görsel, ${p.w.items.length} ürüne eşleştirilecek`);
+    
+    // Her görseli sırayla ilk boş ürüne ekle
+    for(let i=0;i<allImages.length;i++){
+      const img=allImages[i];
+      const item=p.w.items[Math.min(i,p.w.items.length-1)]; // Sırayla git, sonra son ürüne ekle
+      
+      try{
+        // img.buffer = ArrayBuffer, img.ext = format (jpeg/png)
+        const blob=new Blob([img.buffer],{type:'image/'+img.ext});
+        const imgId=await wadd(blob);
+        if(!item.ph)item.ph=[];
+        item.ph.push(imgId);
+        addedCount++;
+        dbg(`✓ Görsel #${i+1} "${item.n}" ürününe eklendi`);
+      }catch(err){
+        dbg(`✗ Görsel #${i+1} eklenemedi: ${err.message}`);
       }
     }
+    
     if(addedCount>0){
       p.u=Date.now();
-      dbg(`✓ .xls'den ${addedCount} görsel ürünlere eklendi`);
+      await winc(p); // IndexedDB'ye kaydet
+      dbg(`✅ .xls'den ${addedCount} görsel ürünlere eklendi ve kaydedildi`);
     }
   }catch(e){
-    dbg('Görsel eşleştirme hatası: '+e.message);
+    dbg('❌ Görsel eşleştirme hatası: '+e.message);
   }
 }
 wshow(p);
