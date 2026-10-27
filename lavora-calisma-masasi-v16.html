@@ -611,7 +611,25 @@ hit=1;let x,y;if(q>=0&&(a==q||b==q))[x,y]=a==q?[a,b]:[b,a];else if(pf>=0&&(a==pf
 if(q<0){q=x;used.add(x)}if(pf<0){pf=y;used.add(y)}if(ti<0){ti=c;used.add(c)}
 }}}
 return{n,q,pf,ti,d,m,ds,im,u}},
-wmult=(p,s)=>{const r=wlink(p,s);if(!r)return 1;const q=num(r.q),R=wrws(s);if(q>1&&R.length&&R.every(x=>num(x.q)==q))return 1;return q>0?q:1},
+wmult=(p,s)=>{
+  const r=wlink(p,s);
+  if(!r)return 1;
+  const q=num(r.q),R=wrws(s);
+  
+  // Eğer tüm satırların adeti aynı ise çarpan gereksiz (zaten satırlarda var)
+  if(q>1&&R.length&&R.every(x=>num(x.q)==q))return 1;
+  
+  // DÜZELTME: Sadece özet sayfasındaki birim fiyat ile detay toplamı eşleşiyorsa çarpan uygula
+  // Yoksa "14 ODA" gibi sayfa adları yanlışlıkla çarpan olarak algılanıyor
+  const detayToplam=R.reduce((a,x)=>a+x.tu,0);
+  if(q>1&&r.pr>0&&Math.abs(r.pr-detayToplam)<1){
+    // Özetteki birim fiyat = detay toplamı ise çarpan doğru
+    return q;
+  }
+  
+  // Diğer durumlarda çarpan kullanma
+  return 1;
+},
 wlink=(p,s)=>{const S0=p.s.find(wsm);if(!S0||S0===s)return null;const R0=wrws(S0),tot=wrws(s).reduce((a,x)=>a+x.tu,0);let r=tot>0?R0.find(x=>Math.abs(x.pr-tot)<1):null;if(!r&&tot>0){const mm=R0.concat(R0.lbl||[]).filter(x=>x.tu>0&&Math.abs(x.tu-tot)<1);if(mm.length==1)r=mm[0]}if(!r){const tk=wtk(s.n);let bs=Math.max(1,Math.ceil(tk.length*.6))-1;R0.concat(R0.lbl||[]).forEach(x=>{const nk=wtk(x.nm),sc=tk.filter(z=>nk.some(y=>y==z||(z.length>=3&&y.length>=3&&(y.startsWith(z)||z.startsWith(y))))).length;if(sc>bs){bs=sc;r=x}})}return r},
 wrws=s=>{const{n,q,pf,ti,d,m,ds}=wmap(s),has=(r,j)=>j>=0&&String(r[j]||'').trim(),nums=[q,pf,ti].filter(j=>j>=0),priced=pf>=0||ti>=0;
 let grp='',ctr=0;const out=[],lbl=[];out.lbl=lbl;
