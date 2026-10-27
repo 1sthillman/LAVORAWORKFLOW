@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Lavora Görsel Debug</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body { font-family: monospace; padding: 20px; background: #0a0a0a; color: #0f0; }
+.log { background: #1a1a1a; padding: 10px; margin: 5px 0; border-left: 3px solid #0f0; }
+.error { border-left-color: #f00; color: #f00; }
+.warning { border-left-color: #ff0; color: #ff0; }
+.success { border-left-color: #0f0; color: #0f0; }
+img { max-width: 200px; max-height: 200px; margin: 10px; border: 2px solid #0f0; }
+</style>
+</head>
+<body>
+<h1>🔍 LAVORA GÖRSEL DEBUG SİSTEMİ</h1>
+<input type="file" id="file" accept=".xlsx,.xls">
+<div id="output"></div>
+
+<script>
+const log = (msg, type = 'log') => {
+  const div = document.createElement('div');
+  div.className = `log ${type}`;
+  div.textContent = msg;
+  output.appendChild(div);
+  console.log(msg);
+};
+
+document.getElementById('file').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  output.innerHTML = '<h2>📊 Analiz Başladı...</h2>';
+  
+  const isXls = /\.xls$/i.test(file.name) && !/\.xlsx$/i.test(file.name);
+  log(`Dosya: ${file.name}`, 'success');
+  log(`Format: ${isXls ? '.xls (ESKİ)' : '.xlsx (YENİ)'}`);
+  log(`Boyut: ${(file.size / 1024).toFixed(2)} KB`);
+  
+  const buffer = await file.arrayBuffer();
+  
+  // 1. XLSX.js ile oku
+  log('\n=== ADIM 1: XLSX.js ile okuma ===', 'success');
+  try {
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    log(`✓ Workbook okundu: ${wb.SheetNames.length} sayfa`);
+    
+    wb.SheetNames.forEach(name => {
+      log(`  - Sayfa: ${name}`);
+    });
+    
+    // .xls'i .xlsx'e dönüştür
+    if (isXls) {
+      log('\n=== ADIM 2: .xls → .xlsx dönüştürme ===', 'warning');
+      try {
+        const newBuffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+        log(`✓ Dönüştürme başarılı: ${(newBuffer.byteLength / 1024).toFixed(2)} KB`, 'success');
+        
+        // Şimdi görselleri dene
+        await tryExtractImages(newBuffer, 'Dönüştürülmüş .xlsx');
+      } catch (err) {
+        log(`✗ Dönüştürme hatası: ${err.message}`, 'error');
+      }
+    } else {
+      await tryExtractImages(buffer, 'Orijinal .xlsx');
+    }
+    
+  } catch (err) {
+    log(`✗ XLSX.js hatası: ${err.message}`, 'error');
+  }
+};
+
+async function tryExtractImages(buffer, source) {
+  log(`\n=== GÖRSEL ÇIKARMA: ${source} ===`, 'success');
+  
+  // Yöntem 1: ZIP okuma
+  try {
+    log('Yöntem 1: ZIP okuma ile...');
+    
+    // Check if it's a valid ZIP
+    const view = new Uint8Array(buffer);
+    const isPK = view[0] === 0x50 && view[1] === 0x4B; // "PK" signature
+    
+    if (!isPK) {
+      log('✗ ZIP formatı değil (eski .xls binary)', 'error');
+      log('  İpucu: .xls dosyaları ZIP değil, özel binary format', 'warning');
+      log('  Çözüm: Görseller manuel eklenebilir veya Excel\'de .xlsx\'e kaydet', 'warning');
+      return;
+    }
+    
+    log('✓ ZIP formatı tespit edildi');
+    
+    // xlImgs fonksiyonu (koddan kopyalandı)
+    const images = await extractImagesFromZip(buffer);
+    
+    if (images && Object.keys(images).length > 0) {
+      log(`✓ ${Object.keys(images).length} sayfa için görsel bulundu`, 'success');
+      
+      for (const [sheetName, imgs] of Object.entries(images)) {
+        log(`\n  📄 ${sheetName}: ${imgs.length} görsel`);
+        
+        for (let i = 0; i < imgs.length; i++) {
+          const img = imgs[i];
+          log(`    [${i + 1}] Satır ${img.r1}-${img.r2}, ${img.bytes.length} bytes, .${img.ext}`);
+          
+          // Görseli göster
+          const blob = new Blob([img.bytes], { type: `image/${img.ext}` });
+          const url = URL.createObjectURL(blob);
+          const imgEl = document.createElement('img');
+          imgEl.src = url;
+          imgEl.title = `${sheetName} - Satır ${img.r1}-${img.r2}`;
+          output.appendChild(imgEl);
+        }
+      }
+    } else {
+      log('✗ Hiç görsel bulunamadı', 'error');
+      log('  Olası sebepler:', 'warning');
+      log('  1. Excel\'de gerçekten görsel yok', 'warning');
+      log('  2. Görseller farklı klasörde (xl/embeddings/)', 'warning');
+      log('  3. OLE nesneleri (eski format)', 'warning');
+    }
+    
+  } catch (err) {
+    log(`✗ ZIP okuma hatası: ${err.message}`, 'error');
+    console.error(err);
+  }
+}
+
+// xlImgs fonksiyonunun basitleştirilmiş versiyonu
+async function extractImagesFromZip(buffer) {
+  const images = {};
+  
+  // Basit ZIP parser (production koddan)
+  const td = new TextDecoder();
+  const files = {};
+  
+  // ZIP signature kontrolü
+  const view = new DataView(buffer);
+  let offset = 0;
+  
+  while (offset < buffer.byteLength - 4) {
+    const sig = view.getUint32(offset, true);
+    
+    // Local file header: 0x04034b50
+    if (sig === 0x04034b50) {
+      const nameLen = view.getUint16(offset + 26, true);
+      const extraLen = view.getUint16(offset + 28, true);
+      const compSize = view.getUint32(offset + 18, true);
+      
+      const nameStart = offset + 30;
+      const nameBytes = new Uint8Array(buffer, nameStart, nameLen);
+      const fileName = td.decode(nameBytes);
+      
+      const dataStart = nameStart + nameLen + extraLen;
+      const data = new Uint8Array(buffer, dataStart, compSize);
+      
+      files[fileName] = data;
+      
+      offset = dataStart + compSize;
+    } else {
+      offset++;
+    }
+  }
+  
+  log(`✓ ZIP parse edildi: ${Object.keys(files).length} dosya bulundu`);
+  
+  // xl/media/ klasöründe görselleri ara
+  const mediaFiles = Object.keys(files).filter(f => f.startsWith('xl/media/'));
+  log(`✓ xl/media/ klasöründe ${mediaFiles.length} dosya`);
+  
+  // Her görsel için meta bilgi
+  mediaFiles.forEach(f => {
+    const ext = f.split('.').pop().toLowerCase();
+    log(`  - ${f} (.${ext}, ${files[f].length} bytes)`);
+  });
+  
+  return images; // Basitleştirilmiş versiyon
+}
+</script>
+</body>
+</html>

@@ -935,92 +935,92 @@ navigator.vibrate?.(200);
 async function xlsExtractImages(buf){
   const images={};
   try{
-    /* .xls = BIFF (Binary Interchange File Format)
-       Görseller IMDATA (ImageData) recordlarında saklanır
-       Record yapısı: [type:2byte][size:2byte][data:size]
+    /* .xls dosyası OLE compound document olabilir
+       Görseller BIFF recordlarında değil, ham binary içinde gömülü olabilir
+       Strategy: Raw binary scan - JPEG/PNG signature'larını bul
     */
-    const view=new DataView(buf);
+    const arr=new Uint8Array(buf);
+    const len=arr.length;
+    let foundCount=0;
+    
+    // JPEG tarama (0xFF 0xD8 0xFF ile başlar, 0xFF 0xD9 ile biter)
     let pos=0;
-    const records=[];
-    
-    // BIFF recordlarını parse et
-    while(pos<buf.byteLength-4){
-      try{
-        const type=view.getUint16(pos,true);
-        const size=view.getUint16(pos+2,true);
-        
-        if(size>0&&size<1e7&&pos+4+size<=buf.byteLength){
-          records.push({type,size,pos:pos+4,data:new Uint8Array(buf,pos+4,size)});
-          pos+=4+size;
-        }else{
-          pos++;
-        }
-      }catch(e){
-        pos++;
-      }
-    }
-    
-    dbg(`✓ .xls parse: ${records.length} record bulundu`);
-    
-    // IMDATA (0x7F), IMGDATA (0xE0), veya diğer görsel recordları ara
-    const imageRecords=records.filter(r=>[0x7F,0xE0,0xE9,0xEB].includes(r.type));
-    
-    if(imageRecords.length){
-      dbg(`✓ ${imageRecords.length} potansiyel görsel record bulundu`);
-      
-      for(const rec of imageRecords){
-        // Görsel formatını tespit et (JPEG, PNG, BMP, GIF)
-        const data=rec.data;
-        let format='',offset=0;
-        
-        // JPEG: FF D8 FF
-        if(data[0]===0xFF&&data[1]===0xD8&&data[2]===0xFF){
-          format='jpeg';
-        }
-        // PNG: 89 50 4E 47
-        else if(data[0]===0x89&&data[1]===0x50&&data[2]===0x4E&&data[3]===0x47){
-          format='png';
-        }
-        // GIF: 47 49 46
-        else if(data[0]===0x47&&data[1]===0x49&&data[2]===0x46){
-          format='gif';
-        }
-        // BMP: 42 4D
-        else if(data[0]===0x42&&data[1]===0x4D){
-          format='bmp';
-        }
-        // Bazı .xls'lerde görseller biraz offset'li olabilir
-        else{
-          // İlk 100 byte'da imza ara
-          for(let i=0;i<Math.min(100,data.length-4);i++){
-            if(data[i]===0xFF&&data[i+1]===0xD8&&data[i+2]===0xFF){
-              format='jpeg';offset=i;break;
-            }else if(data[i]===0x89&&data[i+1]===0x50&&data[i+2]===0x4E&&data[i+3]===0x47){
-              format='png';offset=i;break;
-            }
+    while(pos<len-3){
+      if(arr[pos]===0xFF&&arr[pos+1]===0xD8&&arr[pos+2]===0xFF){
+        // JPEG başlangıcı bulundu
+        let endPos=pos+3;
+        while(endPos<len-1){
+          if(arr[endPos]===0xFF&&arr[endPos+1]===0xD9){
+            endPos+=2;
+            break;
           }
+          endPos++;
         }
         
-        if(format){
-          const imgData=offset>0?data.slice(offset):data;
-          // İlk sayfaya ekle (sayfa eşleştirmesi için daha fazla analiz gerekir)
+        if(endPos<len){
+          const imgData=arr.slice(pos,endPos);
           if(!images['default'])images['default']=[];
+          
           images['default'].push({
             r1:0,r2:0,c1:0,c2:0,
-            ext:format==='jpeg'?'jpeg':format,
-            bytes:imgData
+            ext:'jpeg',
+            buffer:imgData.buffer.slice(imgData.byteOffset,imgData.byteOffset+imgData.byteLength),
+            name:`image_${++foundCount}.jpg`,
+            data:URL.createObjectURL(new Blob([imgData],{type:'image/jpeg'}))
           });
-          dbg(`  ✓ ${format.toUpperCase()} görsel bulundu (${imgData.length} bytes)`);
+          
+          dbg(`✓ JPEG görsel bulundu: offset=${pos}, size=${imgData.length}`);
+          pos=endPos;
+          continue;
         }
       }
-    }else{
-      dbg('⚠️ .xls içinde görsel record bulunamadı');
+      pos++;
     }
     
-  }catch(e){
-    dbg('⚠️ .xls görsel çıkarma hatası: '+e.message);
+    // PNG tarama (0x89 0x50 0x4E 0x47...)
+    pos=0;
+    while(pos<len-8){
+      if(arr[pos]===0x89&&arr[pos+1]===0x50&&arr[pos+2]===0x4E&&arr[pos+3]===0x47&&
+         arr[pos+4]===0x0D&&arr[pos+5]===0x0A&&arr[pos+6]===0x1A&&arr[pos+7]===0x0A){
+        // PNG başlangıcı bulundu, IEND chunk'ını bul
+        let endPos=pos+8;
+        while(endPos<len-12){
+          if(arr[endPos]===0x49&&arr[endPos+1]===0x45&&arr[endPos+2]===0x4E&&arr[endPos+3]===0x44){
+            endPos+=8; // IEND chunk + CRC
+            break;
+          }
+          endPos++;
+        }
+        
+        if(endPos<len){
+          const imgData=arr.slice(pos,endPos);
+          if(!images['default'])images['default']=[];
+          
+          images['default'].push({
+            r1:0,r2:0,c1:0,c2:0,
+            ext:'png',
+            buffer:imgData.buffer.slice(imgData.byteOffset,imgData.byteOffset+imgData.byteLength),
+            name:`image_${++foundCount}.png`,
+            data:URL.createObjectURL(new Blob([imgData],{type:'image/png'}))
+          });
+          
+          dbg(`✓ PNG görsel bulundu: offset=${pos}, size=${imgData.length}`);
+          pos=endPos;
+          continue;
+        }
+      }
+      pos++;
+    }
+    
+    if(foundCount>0){
+      dbg(`✓ Toplam ${foundCount} görsel çıkarıldı (.xls raw scan)`);
+    }else{
+      dbg('⚠ .xls içinde görsel bulunamadı');
+    }
+    
+  }catch(err){
+    dbg('✗ .xls görsel çıkarma hatası: '+err.message);
   }
-  
   return images;
 }
 
